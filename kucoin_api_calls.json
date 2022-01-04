@@ -1,0 +1,22 @@
+{
+    "get_trading_pairs": {
+        "call": "GET /api/v1/symbols",
+        "desc": "get a list of available currency pairs for trading"
+    },
+    "get_24hr_stats": {
+        "call": "GET /api/v1/market/stats",
+        "desc": "get the statistics of the specified ticker in the last 24 hours"
+    },
+    "get_order_book": {
+        "call": "GET /api/v3/market/orderbook/level2",
+        "desc": ""
+    },
+    "get_trade_history": {
+        "call": "GET /api/v1/market/histories",
+        "desc": "get the trade history of the specified symbol"
+    },
+    "get_klines": {
+        "call": "GET /api/v1/market/candles",
+        "desc": " get the kline of the specified symbol"
+    }
+}
