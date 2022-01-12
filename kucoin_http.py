@@ -25,7 +25,7 @@ class BadStatusException(Exception):
 
 
 # Class with variable functions used to create parameters for requests
-class KucoinClientUtils:
+class KucoinHttpClientUtils:
 
     _tick_to_sec_map = {
         "1min": 60,
@@ -60,11 +60,12 @@ class KucoinClientUtils:
     def orderbook_parser(cls, response: dict) -> List[List[List[Any]]]:
         data = response["data"]
         timestamp = data["time"]
+        sequence = data["sequence"]  # used to match socket data to snapshot
         asks, bids = data["asks"], data["bids"]
         return [asks, bids]
 
 
-class KucoinRestApiClient:
+class KucoinHttpClient:
 
     _base_url = "https://api.kucoin.com"
     _total_n_reqs = 0  # number of successful requests sent to the server
@@ -213,9 +214,9 @@ if __name__ == "__main__":
     KC_API_SECRET = "ec418fb6-02f0-475f-86f9-8b365d61e6fc"
     KC_API_PASSPHRASE = "kcpass228"
 
-    client = KucoinRestApiClient(KC_API_KEY, KC_API_SECRET, KC_API_PASSPHRASE)
+    client = KucoinHttpClient(KC_API_KEY, KC_API_SECRET, KC_API_PASSPHRASE)
 
-    reqs_btc = KucoinClientUtils.get_kline_reqs(
+    reqs_btc = KucoinHttpClientUtils.get_kline_reqs(
         "BTC-USDT", 1621694003, 1641727723, "1min"
     )
 
@@ -224,7 +225,7 @@ if __name__ == "__main__":
             client.parse_reqs(
                 reqs=reqs_btc,
                 queries=["INSERT INTO klines VALUES ($1, $2, $3, $4, $5, $6, $7)"],
-                parser=KucoinClientUtils.kline_parser,
+                parser=KucoinHttpClientUtils.kline_parser,
                 rps=10,
             )
         )

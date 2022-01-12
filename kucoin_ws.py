@@ -1,20 +1,33 @@
+from typing import List, Any
 import websockets
 import asyncio
 import aiohttp
+import asyncpg
 import requests
 import time
 import json
 import ssl
 import logging
 
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s: %(levelname)s: %(message)s"
 )
 
-# Websocket Kucoin Client
-class KucoinClient:
 
-    SWITCH_ENDPOINT = "https://api.kucoin.com/api/v1/bullet-public"
+class KucoinSocketClientUtils:
+    @classmethod
+    def ws_orderbook_parser(cls, response) -> List[Any]:
+        changes_asks = response["data"]["changes"]["asks"]
+        changes_bids = response["data"]["changes"]["bids"]
+        timestamp = [round(time.time(), 2)] * len(changes_asks)
+        return [changes_asks, changes_bids]
+
+
+# Websocket Kucoin Client
+class KucoinSocketClient:
+
+    _switch_endpoint = "https://api.kucoin.com/api/v1/bullet-public"
 
     def __init__(self, subs):
         self.subs = subs
@@ -23,7 +36,7 @@ class KucoinClient:
 
     # HTTP POST request to the server with prompt to upgrade to WS
     def _ask_upgrade(self):
-        ws_info = requests.post(self.SWITCH_ENDPOINT).json()
+        ws_info = requests.post(self._switch_endpoint).json()
         logging.info("Sending upgrade request to server")
         return ws_info
 
@@ -62,8 +75,15 @@ class KucoinClient:
             logging.info(f"Applying for subscription: {sub}")
             await self._ws.send(subscription)
 
+    # Add data to database
+    async def _execute_query(self, query, data):
+        await self._conn.executemany(query, data)
+
     # Start stream listening
-    async def _run_ws(self):
+    async def listen(self, queries, parse_func):
+
+        self._conn = await asyncpg.create_pool("postgresql://127.0.0.1:5432/postgres")
+
         async with websockets.connect(
             self._ws_endpoint, ssl=ssl.SSLContext(protocol=ssl.PROTOCOL_TLS)
         ) as ws:
@@ -76,18 +96,29 @@ class KucoinClient:
             await self._apply_for_stream()
 
             while True:
-                data = await asyncio.wait_for(ws.recv(), 5)
                 if time.time() - self._last_ping > self._ping_interval:
                     await self._ping_serv()
+                response = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                if response["type"] == "message":
+                    data = parse_func(response)
+                    for query, data in zip(queries, data):
+                        await self._execute_query(query, data)
 
 
 if __name__ == "__main__":
-    client_1 = KucoinClient(["/market/level2:BTC-USDT", "/market/level2:ETH-USDT"])
-    client_2 = KucoinClient(["/market/level2:BTC-USDT"])
+    client_1 = KucoinSocketClient(["/market/level2:BTC-USDT"])
+    client_2 = KucoinSocketClient(["/market/level2:LTC-USDT"])
+
+    queries = [
+        "INSERT INTO asks_updates VALUES ($1, $2, $3)",
+        "INSERT INTO bids_updates VALUES ($1, $2, $3)",
+    ]
+
+    parse_func = KucoinSocketClientUtils.ws_orderbook_parser
 
     async def main():
-        loop = asyncio.get_event_loop()
-        coros = [client_1._run_ws(), client_2._run_ws()]
-        await asyncio.gather(*coros)
+        await asyncio.gather(
+            client_1.listen(queries, parse_func), client_2.listen(queries, parse_func)
+        )
 
     asyncio.run(main())
